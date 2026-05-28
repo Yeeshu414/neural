@@ -8,7 +8,10 @@ import 'dart:math';
 import 'package:crypto/crypto.dart'; 
 import '../services/ble_service.dart';
 import 'package:flutter/services.dart'; // MethodChannel ke liye zaroori hai
-// import 'dart:ui';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+
 
 // ============================================================================
 // 🌐 3. THE GATEKEEPER: BACKGROUND SMS HANDLER
@@ -664,6 +667,9 @@ class NeuralController extends ChangeNotifier {
   String locationStrategy = "off";
   double distanceThreshold = 1.0;
   bool isTrackingActive = false;
+  String smsBackendUrl = "";
+  Timer? _simulationTimer;
+  double _simBaseValue = 50.0;
 
   NeuralController(this._service) {
     loadSettings(); 
@@ -671,21 +677,31 @@ class NeuralController extends ChangeNotifier {
     points = List.generate(50, (index) => 0.0);
 
     _service.signalStream.listen((value) {
-      points.add(value);
-      if (points.length > 50) {
-        points.removeAt(0);
+      if (isConnected) {
+        points.add(value);
+        if (points.length > 50) {
+          points.removeAt(0);
+        }
+        _checkThreshold(value);
+        notifyListeners();
       }
-      _checkThreshold(value);
-      notifyListeners();
     });
 
     _service.connectionStream.listen((connected) {
       isConnected = connected;
+      if (connected) {
+        _stopSimulation();
+      } else {
+        _startSimulation();
+      }
       notifyListeners();
     });
-  }
 
-  // =======================================================================
+    // Start simulation immediately if not connected
+    if (!isConnected) {
+      _startSimulation();
+    }
+  }  // =======================================================================
   // 🔔 SMART ALERT SYSTEM (Handles both Compromised Owners & Third Parties)
   // =======================================================================
   
@@ -790,9 +806,9 @@ class NeuralController extends ChangeNotifier {
               await prefs.setString('dic2_leaks', jsonEncode(dic2Leaks));
               
               // 3. Send SMS
-              Telephony.instance.sendSms(
-                to: ownerNum, 
-                message: "NeuralGate Alert: Your previous code was compromised. Your NEW Secret Code is: $newCode"
+              _sendSmsCrossPlatform(
+                ownerNum, 
+                "NeuralGate Alert: Your previous code was compromised. Your NEW Secret Code is: $newCode"
               );
 
               // 4. Clear from popup list
@@ -867,10 +883,9 @@ class NeuralController extends ChangeNotifier {
       notifyListeners();
 
       print("Sending initial code to $phoneNumber");
-      Telephony.instance.sendSms(
-        to: phoneNumber, 
-        message: "NeuralGate SOS Alert: You are added as an Emergency Contact. Your Secret Code to request my location is: $generatedCode",
-        isMultipart: true
+      _sendSmsCrossPlatform(
+        phoneNumber, 
+        "NeuralGate SOS Alert: You are added as an Emergency Contact. Your Secret Code to request my location is: $generatedCode"
       );
     }
   }
@@ -904,6 +919,14 @@ class NeuralController extends ChangeNotifier {
     locationStrategy = prefs.getString('location_strategy') ?? "off";
     distanceThreshold = prefs.getDouble('distance_threshold') ?? 1.0;
     smartPhoneAction = prefs.getString('smart_phone_action') ?? "media";
+    smsBackendUrl = prefs.getString('sms_backend_url') ?? "";
+    notifyListeners();
+  }
+
+  void setSmsBackendUrl(String url) async {
+    smsBackendUrl = url;
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('sms_backend_url', url);
     notifyListeners();
   }
 
@@ -1060,13 +1083,7 @@ class NeuralController extends ChangeNotifier {
     }
 
     for (String number in contacts) {  
-      print("✉️ Sending SMS to $number...");
-      Telephony.instance.sendSms(
-        to: number, 
-        message: finalMessage,
-        isMultipart: true // 🔥 Naya fix (Ye lambe location message ko tootne nahi dega)
-      );
-      print("✅ SMS Successfully sent to $number");
+      _sendSmsCrossPlatform(number, finalMessage);
     }
     notifyListeners();
   }
@@ -1075,5 +1092,115 @@ class NeuralController extends ChangeNotifier {
   void stopDistanceTracking() {
     isTrackingActive = false;
     notifyListeners();
+  }
+
+  Future<void> _sendSmsCrossPlatform(String to, String message) async {
+    print("✉️ Attempting to send SMS to $to...");
+    
+    // Check if SMS Backend URL is configured in Settings
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? backendUrlStr = prefs.getString('sms_backend_url');
+    
+    if (backendUrlStr != null && backendUrlStr.isNotEmpty) {
+      // Use HTTP SMS backend
+      try {
+        final uri = Uri.parse(backendUrlStr);
+        final response = await http.post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'to': to,
+            'message': message,
+          }),
+        ).timeout(const Duration(seconds: 10));
+        
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          print("✅ SMS sent via HTTP backend successfully!");
+          return;
+        } else {
+          print("❌ HTTP backend failed with status: ${response.statusCode}. Body: ${response.body}");
+        }
+      } catch (e) {
+        print("❌ HTTP backend error: $e");
+      }
+    }
+    
+    // Fallback: If Android, use Telephony. If iOS (or fallback failed), use url_launcher
+    if (Platform.isAndroid) {
+      try {
+        await Telephony.instance.sendSms(
+          to: to,
+          message: message,
+          isMultipart: true,
+        );
+        print("✅ SMS sent via Telephony on Android.");
+      } catch (e) {
+        print("❌ Telephony SMS failed: $e");
+      }
+    } else {
+      // iOS fallback: Open system SMS compose sheet
+      print("📱 iOS fallback: Launching system SMS compose sheet...");
+      final Uri smsUri = Uri(
+        scheme: 'sms',
+        path: to,
+        queryParameters: <String, String>{
+          'body': message,
+        },
+      );
+      try {
+        if (await canLaunchUrl(smsUri)) {
+          await launchUrl(smsUri);
+          print("✅ Launched system SMS compose sheet.");
+        } else {
+          print("❌ Could not launch SMS URL: $smsUri");
+        }
+      } catch (e) {
+        print("❌ Error launching SMS composer: $e");
+      }
+    }
+  }
+
+  void _startSimulation() {
+    if (_simulationTimer != null) return;
+    print("🤖 Starting random neural signal simulation (device disconnected)...");
+    
+    _simulationTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
+      final rand = Random();
+      
+      // RESTING STATE SIGNAL (with bigger deflections/swings)
+      double noise = (rand.nextDouble() - 0.5) * 35; // increased noise swing
+      double sine = sin(timer.tick * 0.12) * 22;      // increased sine amplitude
+      double value = _simBaseValue + sine + noise;
+      
+      if (value < 5) value = 5;
+      
+      // Peaks (not that big): 1.5% chance, amplitude between 110 and 145
+      if (rand.nextDouble() < 0.015) {
+        value = 110.0 + rand.nextDouble() * 35.0;
+        print("⚡ Simulated Moderate Neural Spike: ${value.toStringAsFixed(1)} (Threshold: $threshold)");
+      }
+      
+      points.add(value);
+      if (points.length > 50) {
+        points.removeAt(0);
+      }
+      
+      _checkThreshold(value);
+      notifyListeners();
+    });
+  }
+
+  void _stopSimulation() {
+    if (_simulationTimer != null) {
+      print("🔌 Stopping neural signal simulation (device connected)...");
+      _simulationTimer!.cancel();
+      _simulationTimer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopSimulation();
+    super.dispose();
   }
 }

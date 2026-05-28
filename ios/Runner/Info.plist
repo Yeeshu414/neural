@@ -66,5 +66,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>This app requires Bluetooth access to connect to your ESP32 neural interface device.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>This app requires Bluetooth access to connect to your ESP32 neural interface device.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app requires location access to get your coordinates for sending SOS alerts.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app requires background location access to monitor your safety and send SOS coordinates if a threshold is crossed.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>This app requires background location access to monitor your safety and send SOS coordinates if a threshold is crossed.</string>
 </dict>
 </plist>

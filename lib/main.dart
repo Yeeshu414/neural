@@ -10,6 +10,8 @@ import 'package:permission_handler/permission_handler.dart'; // Add this import
 import 'services/background_service.dart';
 import 'screens/security_dashboard.dart'; // Add this line!
 import 'dart:ui';
+import 'dart:io';
+
 
 
 @pragma('vm:entry-point')
@@ -286,73 +288,63 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       // --------------------------------------------------------
-      // STEP 3: SMS & PHONE (Check first!)
+      // STEP 3: SMS & PHONE (Check first!) - Android Only
       // --------------------------------------------------------
-      if (await Permission.sms.isDenied) {
-        await Permission.sms.request();
-      }
-      if (await Permission.phone.isDenied) {
-        await Permission.phone.request();
-      }
-      
-     // --------------------------------------------------------
-      // STEP 4: BOOT THE UNSTOPPABLE ENGINE
-      // --------------------------------------------------------
-      // if (await Permission.sms.isGranted) {
-      //   print("✅ Core permissions granted!");
-        
-      //   // 1. Turn on the Dumb Shield to keep Vivo awake
-      //   await initializeBackgroundService(); 
-        
-      //   // 2. Start the normal Telephony listener 
-      //   Telephony.instance.listenIncomingSms(
-      //     onNewMessage: foregroundSmsHandler, 
-      //     onBackgroundMessage: backgroundSmsHandler, 
-      //   );
-      // }
-
-      if (await Permission.sms.isGranted) {
-        print("✅ Core permissions granted! Attempting to start SMS Engine...");
-        
-        try { 
-         // 1. Turn on the Background Service
-          await initializeBackgroundService(); 
-          print("✅ Background Service Initialized!");
-
-          // 2. Start the Telephony listener
-          print("⏳ Registering Telephony Listeners...");
-          Telephony.instance.listenIncomingSms(
-            onNewMessage: (SmsMessage message) {
-              // 🔥 Safe Anonymous Binding: Forces the bridge to stay open!
-              print("🚨 [BRIDGE] Native triggered Dart!");
-              foregroundSmsHandler(message);
-            }, 
-            onBackgroundMessage: backgroundSmsHandler,
-            listenInBackground: true, // Tell Native to NEVER try backgrounding
-          );
-          print("🚀 TELEPHONY ENGINE SUCCESSFULLY REGISTERED!");
-
-        } catch (e) {
-          print("❌ FATAL ERROR STARTING TELEPHONY ENGINE: $e");
+      if (Platform.isAndroid) {
+        if (await Permission.sms.isDenied) {
+          await Permission.sms.request();
+        }
+        if (await Permission.phone.isDenied) {
+          await Permission.phone.request();
         }
       }
+      
+      // --------------------------------------------------------
+      // STEP 4: BOOT THE UNSTOPPABLE ENGINE - Android Only
+      // --------------------------------------------------------
+      if (Platform.isAndroid) {
+        if (await Permission.sms.isGranted) {
+          print("✅ Core permissions granted! Attempting to start SMS Engine...");
+          
+          try { 
+            // 1. Turn on the Background Service
+            await initializeBackgroundService(); 
+            print("✅ Background Service Initialized!");
 
+            // 2. Start the Telephony listener
+            print("⏳ Registering Telephony Listeners...");
+            Telephony.instance.listenIncomingSms(
+              onNewMessage: (SmsMessage message) {
+                // 🔥 Safe Anonymous Binding: Forces the bridge to stay open!
+                print("🚨 [BRIDGE] Native triggered Dart!");
+                foregroundSmsHandler(message);
+              }, 
+              onBackgroundMessage: backgroundSmsHandler,
+              listenInBackground: true, // Tell Native to NEVER try backgrounding
+            );
+            print("🚀 TELEPHONY ENGINE SUCCESSFULLY REGISTERED!");
+
+          } catch (e) {
+            print("❌ FATAL ERROR STARTING TELEPHONY ENGINE: $e");
+          }
+        }
+      } else {
+        print("ℹ️ iOS platform: Skipping telephony SMS receiver registration.");
+      }
 
       // --------------------------------------------------------
-      // STEP 5: BATTERY REQUEST (Protected & Checked)
+      // STEP 5: BATTERY REQUEST (Protected & Checked) - Android Only
       // --------------------------------------------------------
-       
+      if (Platform.isAndroid) {
         Future.delayed(const Duration(seconds: 2), () async {
           try {
             print("🔋 Requesting Battery Optimization Bypass...");
             await Permission.ignoreBatteryOptimizations.request(); 
           } catch (e) {
-            // Vivo's custom OS sometimes blocks this command entirely. 
-            // This catch prevents the app from crashing if Vivo blocks it.
             print("⚠️ Battery setting returned an error: $e");
           }
         });
-      
+      }
 
     } catch (e) {
       print("❌ Critical error in permissions: $e");
@@ -379,56 +371,65 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               // --- HEADER ---
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const SizedBox(width: 48), 
+                    // Left side: App Title & Connection status (wrapped in Flexible)
+                    Flexible(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              "NEURALGATE",
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 2, 
+                                color: isDark ? Colors.white : Colors.black87
+                              )
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Consumer<NeuralController>(
+                            builder: (context, ctrl, _) => Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: ctrl.isConnected ? Colors.green : Colors.red,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Right side: Action buttons with explicit small constraints to prevent overflow
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          "NEURALGATE",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 4, 
-                            color: isDark ? Colors.white : Colors.black87
-                          )
-                        ),
-                        const SizedBox(width: 8),
                         Consumer<NeuralController>(
-                          builder: (context, ctrl, _) => Row(
-                            children: [
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: ctrl.isConnected ? Colors.green : Colors.red,
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  ctrl.restartBleScan();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text("Restarting BLE Scan..."), duration: Duration(seconds: 1)),
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                                  child: Icon(Icons.refresh, size: 18, color: isDark ? Colors.white70 : Colors.black54),
-                                ),
-                              ),
-                            ],
+                          builder: (context, ctrl, _) => IconButton(
+                            constraints: const BoxConstraints(),
+                            padding: const EdgeInsets.all(8),
+                            icon: const Icon(Icons.refresh, size: 20),
+                            color: isDark ? Colors.white70 : Colors.black54,
+                            onPressed: () {
+                              ctrl.restartBleScan();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Restarting BLE Scan..."), duration: Duration(seconds: 1)),
+                              );
+                            },
                           ),
                         ),
-                      ],
-                    ),
-                    // 🛡️ WE WRAPPED THE ICONS IN A NEW ROW HERE
-                    Row(
-                      children: [
+                        const SizedBox(width: 4),
                         IconButton(
-                          icon: Icon(Icons.security, color: isDark ? Colors.white : Colors.black87),
+                          constraints: const BoxConstraints(),
+                          padding: const EdgeInsets.all(8),
+                          icon: Icon(Icons.security, size: 20, color: isDark ? Colors.white : Colors.black87),
                           onPressed: () {
                             Navigator.push(
                               context,
@@ -436,12 +437,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             );
                           },
                         ),
+                        const SizedBox(width: 4),
                         IconButton(
-                          icon: Icon(Icons.settings, color: isDark ? Colors.white : Colors.black87),
+                          constraints: const BoxConstraints(),
+                          padding: const EdgeInsets.all(8),
+                          icon: Icon(Icons.settings, size: 20, color: isDark ? Colors.white : Colors.black87),
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => SettingsPage()), // Make sure SettingsPage exists!
+                              MaterialPageRoute(builder: (context) => SettingsPage()),
                             );
                           },
                         ),

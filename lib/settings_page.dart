@@ -14,6 +14,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _msgController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _backendUrlController = TextEditingController();
   List<String> _contacts = [];
   
   bool _isDarkMode = true; 
@@ -30,6 +31,7 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _contacts = prefs.getStringList('emergency_contacts') ?? [];
       _msgController.text = prefs.getString('sos_message') ?? "Emergency! Brain Signal Threshold Exceeded.";
+      _backendUrlController.text = prefs.getString('sms_backend_url') ?? "";
       _isDarkMode = prefs.getBool('is_dark_mode') ?? true;
     });
   }
@@ -39,6 +41,7 @@ class _SettingsPageState extends State<SettingsPage> {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('emergency_contacts', _contacts);
     await prefs.setString('sos_message', _msgController.text);
+    await prefs.setString('sms_backend_url', _backendUrlController.text.trim());
     await prefs.setBool('is_dark_mode', _isDarkMode);
     
     final controller = Provider.of<NeuralController>(context, listen: false);
@@ -229,6 +232,31 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: Text("Manage code leaks, limits & authorized users", style: TextStyle(color: subtitleColor, fontSize: 12)),
               trailing: Icon(Icons.arrow_forward_ios, size: 16, color: subtitleColor),
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdvancedSettingsScreen())),
+            ),
+          ),
+
+          // ---------------------------------------------------------
+          // SMS BACKEND CONFIGURATION (BLUE)
+          // ---------------------------------------------------------
+          _buildSectionHeader('SMS BACKEND SERVICE (iOS/Android)', generalColor),
+          Card(
+            color: cardColor,
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: TextField(
+                controller: _backendUrlController,
+                style: TextStyle(color: textColor),
+                cursorColor: generalColor,
+                decoration: InputDecoration(
+                  labelText: "Backend URL (Twilio / Gateway)",
+                  labelStyle: TextStyle(color: subtitleColor),
+                  hintText: "https://your-backend-url.com/send-sms",
+                  hintStyle: TextStyle(color: subtitleColor.withOpacity(0.5)),
+                  border: InputBorder.none,
+                ),
+              ),
             ),
           ),
 
